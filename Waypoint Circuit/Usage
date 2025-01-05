@@ -1,0 +1,26 @@
+This Unity script is designed to manage waypoints for a game object, providing visualization and control over navigation paths within a scene. It uses child objects as waypoints and draws connections between them to assist in debugging and path planning.
+
+Features:
+
+Waypoint Extraction:
+
+Automatically identifies child objects as waypoints and stores their transforms in an array.
+Dynamically updates the path based on the hierarchy.
+Path Visualization:
+
+Uses Unity's Gizmos to draw a red line between waypoints for real-time visual feedback.
+Marks each waypoint with a wireframe sphere for clear identification.
+Customization:
+
+The color of the path visualization can be customized using the raycolor property.
+Easily adaptable for various pathfinding or movement systems in Unity.
+How It Works:
+
+In the OnDrawGizmos() method, the script iterates through the child objects, identifies their positions, and stores them in the path array.
+It connects the waypoints visually using Gizmos.DrawLine() and highlights them with Gizmos.DrawWireSphere() for clarity.
+This visualization is helpful for level designers or developers to ensure accurate waypoint placement.
+Potential Use Cases:
+
+i) Navigation and pathfinding for NPCs or vehicles.
+ii) Debugging and designing patrol or movement routes for AI systems.
+iii) Visual feedback for dynamic or procedural waypoint setups.
