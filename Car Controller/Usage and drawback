@@ -1,0 +1,12 @@
+This script serves as the core logic for controlling the autonomous vehicle. It processes sensor data, calculates optimal navigation paths, and manages motor controls to ensure smooth, efficient, and collision-free operation.
+
+Features:
+
+i) Sensor Integration: Gathers real-time input from ultrasonic, IR, or LiDAR sensors for obstacle detection and environment mapping.
+ii) Pathfinding Algorithms: Implements algorithms such as Dijkstra or A* to compute the shortest and safest route to the target.
+iii) Motor Control: Dynamically adjusts motor speed and steering angles based on calculated trajectories.
+iv) Safety Protocols: Includes fail-safe mechanisms to handle emergencies, such as immediate stops or route recalculations in high-risk scenarios.
+This script is written to optimize performance and reliability, making the vehicle ideal for real-world applications like delivery services, research, or educational projects.
+
+Drwaback: Obstacle detection is not working well but its good for one exploring the idea to implement this system
+
