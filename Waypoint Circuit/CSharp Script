@@ -1,0 +1,56 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class Waypoint_1 : MonoBehaviour
+{
+
+    public Transform[] path;
+    public Color raycolor = Color.red;
+    // Start is called before the first frame update
+    void Start()
+    {
+        
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        
+    }
+
+    private void OnDrawGizmos()
+    {
+        Gizmos.color = raycolor;
+
+        // the following code is to extract transform and store it into array 
+
+        Transform objects_path = transform.GetComponentInChildren<Transform>();
+
+        List<Transform> path_of_objects = new List<Transform>();
+
+        foreach (Transform child in objects_path)
+        {
+            if(child != transform)
+            {
+                path_of_objects.Add(child);
+            }
+        }
+
+        path = path_of_objects.ToArray();
+
+        // The following code is to extract position
+
+        for(int i = 0; i < path.Length; i++)
+        {
+            Vector3 pos = path_of_objects[i].position;
+
+            if(i > 0)
+            {
+                Vector3 prev = path_of_objects[i - 1].position;
+                Gizmos.DrawLine(pos, prev);
+                Gizmos.DrawWireSphere(pos, (float) 0.3);
+            }
+        }
+    }
+}
