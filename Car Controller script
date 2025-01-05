@@ -1,0 +1,1103 @@
+
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using Unity.VisualScripting;
+using UnityEngine;
+
+public class Steering : MonoBehaviour
+{
+    public Transform[] path;
+    public Transform pathgroup;
+    public double maxSteer;
+    public double newSteer;
+    public WheelCollider WheelFL;
+    public WheelCollider WheelFR;
+    public WheelCollider WheelRL;
+    public WheelCollider WheelRR;
+
+    public Transform WheelFL_Transform;
+    public Transform WheelFR_Transform;
+
+    public int curr_path_object;
+
+    Vector3 pathPosition;
+    Vector3 SteerVector;
+
+    public float direction;
+
+    public Vector3 CentreofMass;
+
+    public Rigidbody rb;
+
+    public double distFromPath = 20.0;
+
+    public float maxTorque;
+
+    public float curr_speed;
+
+    public float top_speed;
+
+    public float deceleration_speed = 10;
+
+    public GameObject LeftBrakeLight;
+
+    public GameObject RightBrakeLight;
+
+    public Boolean isBreaking = false;
+
+    public float cornering_speed;
+
+    public float Brake_torque;
+
+    public float Cornering_motor_torque;
+
+    public float target_torque;
+
+    public bool Brake_At_Corners = false;
+
+    public float absBrakeTorque_RL;
+
+    float slip_ratio_RL;
+
+    float slip_ratio_FL;
+
+    public float absBrakeTorque_FL;
+
+    float slip_ratio_FR;
+
+    public float absBrakeTorque_FR;
+
+    float slip_ratio_RR;
+
+    public float absBrakeTorque_RR;
+
+    public float sensorLength;
+
+    public double front_Sensor_Start_Point = 2.4;
+
+    public double front_left_angled_sensor_start_point;
+
+    public double front_right_angled_sensor_start_point;
+
+    private Vector3 pos;
+
+    private Vector3 rightSensorPos;
+
+    private Vector3 leftSensorPos;
+
+    private RaycastHit front_hit;
+
+    private RaycastHit right_hit;
+
+    private RaycastHit left_hit;
+
+    private RaycastHit right_angular_hit;
+
+    private RaycastHit left_angular_hit;
+
+    private RaycastHit sideway_right_hit;
+
+    private RaycastHit sideway_left_hit;
+
+    public float frontSensorSideDistance = 5;
+
+    // public float front_Angle_Axis = 30;
+
+    public float right_angled_angle = 30;
+
+    public float left_angled_angle = 30;
+
+    Vector3 right_Angle;
+
+    Vector3 left_Angle;
+
+    Vector3 rightAngleSensorPos;
+
+    Vector3 leftAngleSensorPos;
+
+    public float SidewaySensorLength;
+
+    public int flag = 0;
+
+    public Boolean Is_Avoidance_Active = false;
+
+    public double avoid_Senstivity = 0;
+
+    public double change_in_senstivity;
+
+    public double maxSteerforAvoidance;
+
+    public Boolean front_Sensor_Hit;
+
+    public Boolean front_right_straight_sensor_hit;
+
+    public Boolean front_left_straight_sensor_hit;
+
+    public Boolean front_right_angular_sensor_hit;
+
+    public Boolean front_left_angular_sensor_hit;
+
+    public Boolean right_sideway_sensor_hit;
+
+    public Boolean left_sideway_sensor_hit;
+
+    public double front_mid_sensor_distance;
+
+    public double front_right_sensor_distance;
+
+    public double front_left_sensor_distance;
+
+    public double front_right_angular_sensor_distance;
+
+    public double front_left_angular_sensor_distance;
+
+    public double right_sideway_sensor;
+
+    public double left_sideway_sensor;
+
+    Vector3 obstacle_last_position;
+
+    public GameObject front_right_angular_sensor_pos;
+
+    public GameObject front_left_angular_sensor_sensor_pos;
+
+    // public double obstacle_speed_in_metres_per_second;
+
+    Vector3 obstacle_curr_position;
+
+    public float distance;
+
+    public float obstacle_speed;
+
+    public float obstacle_speed_meters_per_sec;
+
+    public float obstacle_speed_kmh;
+
+    public float lastTime;
+
+    public double Emergency_Brake_Torque;
+
+    public Boolean is_Enabled_Emergency_Braking;
+
+    public GameObject LeftBrakeLight1;
+    public GameObject RightBrakeLight1;
+
+
+    // Start is called before the first frame update
+    void Start()
+    {
+        rb = GetComponent<Rigidbody>();
+
+        rb.centerOfMass = CentreofMass;
+
+        Get_Path();
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        if (flag == 0)
+        {
+            Movement();
+            Is_Avoidance_Active = false;
+            if (!Is_Avoidance_Active)
+            {
+
+                GetSteer();
+            }
+
+            BrakeAtCorners();
+            BrakeLights();
+            Sensors();
+            avoid_Steer(avoid_Senstivity);
+            CalculateObstacleSpeed();
+
+
+        } else if (flag >= 1)
+        {
+            Is_Avoidance_Active = true;
+            Movement();
+            if (Is_Avoidance_Active)
+            {
+                CollisionAvoidance(avoid_Senstivity);
+            }
+
+
+            BrakeAtCorners();
+            BrakeLights();
+            Sensors();
+            avoid_Steer(avoid_Senstivity);
+            CalculateObstacleSpeed();
+        }
+
+    }
+
+    public void Get_Path()
+    {
+        // Gizmos.color = Color.red;
+
+        Transform[] path_objects = pathgroup.GetComponentsInChildren<Transform>();
+
+        List<Transform> path_List = new List<Transform>();
+
+        foreach (Transform path_object in path_objects)
+        {
+            if (path_object != pathgroup)
+            {
+                path_List.Add(path_object);
+            }
+        }
+
+        path = path_List.ToArray();
+
+        Debug.Log(path.Length);
+    }
+
+    public void GetSteer()
+    {
+        if (curr_path_object < path.Length) // Ensure that the index is within the bounds of the array
+        {
+            // Get the position of the current path object
+            pathPosition = path[curr_path_object].position;
+            // Use the position to create a new Vector3 for the SteerVector
+            SteerVector = transform.InverseTransformPoint(new Vector3(pathPosition.x, transform.position.y, pathPosition.z));
+            // Now you can use SteerVector for whatever you need next
+        }
+        else
+        {
+            Debug.LogError("curr_path_object index is out of bounds: " + curr_path_object.ToString());
+        }
+
+
+        newSteer = maxSteer * (SteerVector.x / SteerVector.magnitude);
+
+        direction = SteerVector.x / SteerVector.magnitude;
+        WheelFL.steerAngle = (float)newSteer;
+        WheelFR.steerAngle = (float)newSteer;
+
+        Debug.Log(newSteer);
+
+        if (SteerVector.magnitude <= distFromPath)
+        {
+            curr_path_object++;
+        }
+
+        if (curr_path_object >= path.Length)
+        {
+            curr_path_object = 0;
+        }
+    }
+
+    public void Movement()
+    {
+        curr_speed = 2 * Mathf.PI * WheelRL.radius * WheelRL.rpm * 60 / 1000;
+        curr_speed = Mathf.Round(curr_speed);
+
+        if (curr_speed <= top_speed)
+        {
+            WheelRL.motorTorque = maxTorque;
+            WheelRR.motorTorque = maxTorque;
+            WheelFL.motorTorque = maxTorque;
+            WheelFR.motorTorque = maxTorque;
+            WheelRL.brakeTorque = 0;
+            WheelRR.brakeTorque = 0;
+            WheelFL.brakeTorque = 0;
+            WheelFR.brakeTorque = 0;
+            isBreaking = false;
+        } else if (curr_speed >= top_speed)
+        {
+            WheelRL.motorTorque = 0;
+            WheelRR.motorTorque = 0;
+            WheelFL.motorTorque = 0;
+            WheelFR.motorTorque = 0;
+            WheelRL.brakeTorque = deceleration_speed;
+            WheelRR.brakeTorque = deceleration_speed;
+            WheelFL.brakeTorque = deceleration_speed;
+            WheelFR.brakeTorque = deceleration_speed;
+            isBreaking = true;
+        }
+    }
+
+    public void BrakeLights()
+    {
+        if (isBreaking == true)
+        {
+            LeftBrakeLight.SetActive(true);
+            RightBrakeLight.SetActive(true);
+        } else if (isBreaking == false)
+        {
+            LeftBrakeLight.SetActive(false);
+            RightBrakeLight.SetActive(false);
+        }
+
+        // for brakelights when emergency brake is applied
+
+        if (is_Enabled_Emergency_Braking == true)
+        {
+            // turn the brake lights on
+            LeftBrakeLight1.SetActive(true);
+            RightBrakeLight.SetActive(true);
+        }
+        else if (is_Enabled_Emergency_Braking == false)
+        {
+            // turn the brake lights off
+            LeftBrakeLight1.SetActive(false);
+            RightBrakeLight1.SetActive(false);
+        }
+
+
+    }
+
+
+
+    private void OnTriggerEnter(Collider collision)
+    {
+        if (collision.gameObject.CompareTag("Brake Sector"))
+        {
+            Brake_At_Corners = true;
+            BrakeAtCorners();
+            isBreaking = true;
+            // BrakeLights();
+        }
+        else if (collision.gameObject.CompareTag("Brake Release Sector"))
+        {
+            Brake_At_Corners = false;
+            Movement();
+            isBreaking = false;
+            // BrakeLights();
+        }
+    }
+
+    private float CalculateCorneringTorque()
+    {
+        // Check if current speed is higher than the cornering speed
+        if (curr_speed > cornering_speed)
+        {
+            // Calculate the excess speed ratio
+            float excessSpeedRatio = (curr_speed - cornering_speed) / curr_speed;
+
+            // Reduce the motor torque proportionally to the excess speed
+            float adjustedTorque = maxTorque * (1 - excessSpeedRatio);
+
+            // Ensure the torque is not negative
+            return Mathf.Max(0, adjustedTorque);
+        }
+        else
+        {
+            // If speed is below or equal to the cornering speed, apply full motor torque
+            return maxTorque;
+        }
+    }
+
+
+    public void BrakeAtCorners()
+    {
+        if (curr_speed > cornering_speed && Brake_At_Corners == true)
+        {
+
+            // target_torque = CalculateCorneringTorque();
+
+            isBreaking = true;
+
+            slip_ratio_RL = Mathf.Abs(WheelRL.rpm / curr_speed);
+
+            if (slip_ratio_RL > 1.0f)
+                slip_ratio_RL = 1.0f;
+
+            absBrakeTorque_RL = Mathf.Lerp(0, Brake_torque, slip_ratio_RL);
+
+            slip_ratio_FL = Mathf.Abs(WheelFL.rpm / curr_speed);
+
+            if (slip_ratio_FL > 1.0f)
+            {
+                slip_ratio_FL = 1.0f;
+
+
+                absBrakeTorque_FL = Mathf.Lerp(0, Brake_torque, slip_ratio_FL);
+            }
+
+            slip_ratio_FR = Mathf.Abs(WheelFR.rpm / curr_speed);
+
+            if (slip_ratio_FR > 1.0f)
+            {
+                slip_ratio_FR = 1.0f;
+
+                absBrakeTorque_FR = Mathf.Lerp(0, Brake_torque, slip_ratio_FR);
+            }
+
+            slip_ratio_RR = Mathf.Abs(WheelRR.rpm / curr_speed);
+
+            if (slip_ratio_RR > 1.0f)
+            {
+                slip_ratio_RR = 1.0f;
+
+                absBrakeTorque_RR = Mathf.Lerp(0, Brake_torque, slip_ratio_RR);
+            }
+
+            WheelFL.brakeTorque = Brake_torque;
+            WheelFR.brakeTorque = Brake_torque;
+            WheelRL.brakeTorque = Brake_torque;
+            WheelRR.brakeTorque = Brake_torque;
+
+
+        }
+        else if (curr_speed <= cornering_speed && isBreaking == true && Brake_At_Corners == true)
+        {
+            target_torque = CalculateCorneringTorque();
+
+            WheelFL.brakeTorque = 0;
+            WheelFR.brakeTorque = 0;
+            WheelRL.brakeTorque = 0;
+            WheelRR.brakeTorque = 0;
+
+            WheelFL.motorTorque = target_torque;
+            WheelFR.motorTorque = target_torque;
+            WheelRL.motorTorque = target_torque;
+            WheelRR.motorTorque = target_torque;
+
+        }
+    }
+
+
+    //public void Sensors()
+    //{
+    //    flag = 0;
+
+    //    float front_sensor_initial_point = (float)front_Sensor_Start_Point;
+    //    pos = transform.position;
+
+    //    float front_left_angled_sensor_initial_point = (float)front_left_angled_sensor_start_point;
+
+    //    float front_right_angled_sensor_initial_point = (float)front_right_angled_sensor_start_point;
+
+    //    // Initialize flags
+    //    front_Sensor_Hit = false;
+    //    front_left_straight_sensor_hit = false;
+    //    front_right_straight_sensor_hit = false;
+    //    front_right_angular_sensor_hit = false;
+    //    front_left_angular_sensor_hit = false;
+    //    right_sideway_sensor_hit = false;
+    //    left_sideway_sensor_hit = false;
+
+
+
+    //    // front mid sensor
+    //    pos = pos + transform.forward * front_sensor_initial_point;
+
+    //    if (Physics.Raycast(pos, transform.forward, out front_hit, sensorLength))
+    //    {
+    //        if ((front_hit.transform.tag != "Terrain") || (front_hit.transform.tag != "Railings") || (front_hit.transform.tag != "Barrels"))
+    //        {
+    //            front_Sensor_Hit = Physics.Raycast(pos, transform.forward, out front_hit, sensorLength);
+
+    //            front_mid_sensor_distance = front_hit.distance;
+    //            while (avoid_Senstivity <= 1)
+    //            {
+    //                avoid_Senstivity = avoid_Senstivity + change_in_senstivity;
+    //            }
+    //            flag++;
+
+    //            Debug.Log("Avoiding Obstacle");
+
+    //            Debug.DrawLine(pos, front_hit.point, Color.black);
+    //        }
+    //    }
+    //    else if (!Physics.Raycast(pos, transform.forward, out front_hit, sensorLength))
+    //    {
+    //        flag = 0;
+    //        //front_Sensor_Hit = false;
+    //    }
+
+    //    // front straight right sensor
+    //    rightSensorPos = pos + transform.right * frontSensorSideDistance;
+
+    //    if (Physics.Raycast(rightSensorPos, transform.forward, out right_hit, sensorLength))
+    //    {
+    //        if ((right_hit.transform.tag != "Terrain") || (right_hit.transform.tag != "Railing") || (right_hit.transform.tag != "Barrels")) 
+    //        {
+    //            front_right_straight_sensor_hit = Physics.Raycast(rightSensorPos, transform.forward, out right_hit, sensorLength);
+
+    //            front_right_sensor_distance = right_hit.distance;
+    //            while (avoid_Senstivity <= 1)
+    //            {
+    //                avoid_Senstivity = avoid_Senstivity + change_in_senstivity;
+    //            }
+    //            flag++;
+    //            // Is_Avoidance_Active = true;
+    //            Debug.Log("Avoiding Obstacle");
+    //            Debug.DrawLine(rightSensorPos, right_hit.point, Color.black);
+    //        }
+    //    }
+    //    else if (!Physics.Raycast(rightSensorPos, transform.forward, out RaycastHit raycastHit, sensorLength))
+    //    {
+    //        flag = 0;
+    //        //  front_right_angular_sensor_hit = false;
+    //    }
+
+    //    // front left straight sensor
+    //    leftSensorPos = pos - transform.right * frontSensorSideDistance;
+
+    //    if (Physics.Raycast(leftSensorPos, transform.forward, out left_hit, sensorLength))
+    //    {
+    //        if ((left_hit.transform.tag != "Terrain") || (left_hit.transform.tag != "Railing") || (left_hit.transform.tag != "Barrels"))
+    //        {
+    //            front_left_straight_sensor_hit = Physics.Raycast(leftSensorPos, transform.forward, out left_hit, sensorLength);
+
+    //            front_left_sensor_distance = left_hit.distance;
+    //            while (avoid_Senstivity <= 1)
+    //            {
+    //                avoid_Senstivity = avoid_Senstivity + change_in_senstivity;
+    //            }
+    //            flag++;
+
+    //            Debug.Log("Avoiding Obstacle");
+
+    //            Debug.DrawLine(leftSensorPos, left_hit.point, Color.black);
+    //        }
+    //        else if (!Physics.Raycast(leftSensorPos, transform.forward, out left_hit, sensorLength))
+    //        {
+    //            flag = 0;
+    //            // front_left_straight_sensor_hit = false;
+    //        }
+    //    }
+
+    //    // Calculate front right angle sensor position
+
+
+    //    rightAngleSensorPos = front_right_angular_sensor_pos.transform.position;
+
+    //    right_Angle = Quaternion.AngleAxis(right_angled_angle, transform.up) * transform.forward;
+
+
+    //    if (Physics.Raycast(rightAngleSensorPos, right_Angle, out right_angular_hit, sensorLength))
+    //    {
+    //        if ((right_angular_hit.transform.tag != "Terrain") || (right_angular_hit.transform.tag != "Railing") || (right_angular_hit.transform.tag != "Barrels"))
+    //        {
+    //            front_right_angular_sensor_hit = Physics.Raycast(rightAngleSensorPos, right_Angle, out right_angular_hit, sensorLength);
+
+    //            front_right_angular_sensor_distance = right_angular_hit.distance;
+    //            while (avoid_Senstivity <= 1)
+    //            {
+    //                avoid_Senstivity = avoid_Senstivity + change_in_senstivity;
+    //            }
+    //            Debug.Log("Avoiding Obstacle");
+    //            Debug.DrawLine(rightAngleSensorPos, right_angular_hit.point, Color.green);
+    //        }
+    //        else
+    //        {
+    //            flag = 0;
+    //        }
+    //    }
+
+    //    // Calculate front left angle sensor position
+
+
+    //    leftAngleSensorPos = front_left_angular_sensor_sensor_pos.transform.position;
+
+    //    //caluate the angle for left angled sensor
+
+    //    left_Angle = Quaternion.AngleAxis(left_angled_angle, transform.up) * transform.forward;
+
+
+    //    if (Physics.Raycast(leftAngleSensorPos, left_Angle, out left_angular_hit, sensorLength))
+    //    {
+    //        if ((left_angular_hit.transform.tag != "Terrain") || (left_angular_hit.transform.tag != "Railing") || (left_angular_hit.transform.tag != "Barrels"))
+    //        {
+    //            front_left_angular_sensor_hit = Physics.Raycast(leftAngleSensorPos, left_Angle, out left_angular_hit, sensorLength);
+
+    //            front_left_angular_sensor_distance = left_angular_hit.distance;
+
+    //            while (avoid_Senstivity <= 1)
+    //            {
+    //                avoid_Senstivity = avoid_Senstivity + change_in_senstivity;
+    //            }
+    //            Debug.Log("Avoiding Obstacle");
+    //            Debug.DrawLine(leftAngleSensorPos, left_angular_hit.point, Color.blue);
+    //        }
+    //        else
+    //        {
+    //            flag = 0;
+    //        }
+    //    }
+
+    //    //Right Sideway Sensor
+
+    //    if (Physics.Raycast(transform.position, transform.right, out sideway_right_hit, SidewaySensorLength))
+    //    {
+    //        if ((sideway_right_hit.transform.tag != "Terrain") || (sideway_right_hit.transform.tag != "Railing") || (sideway_right_hit.transform.tag != "Barrels"))
+    //        {
+    //            right_sideway_sensor_hit = Physics.Raycast(transform.position, transform.right, out sideway_right_hit, SidewaySensorLength);
+
+    //            right_sideway_sensor = sideway_right_hit.distance;
+
+    //            Debug.DrawLine(transform.position, sideway_right_hit.point, Color.black);
+    //        } else
+    //        {
+    //            flag = 0;
+    //        }
+    //    }
+
+    //    //Left Sideway Sensor
+    //    if (Physics.Raycast(transform.position, -transform.right, out sideway_left_hit, SidewaySensorLength))
+    //    {
+    //        if ((sideway_left_hit.transform.tag != "Terrain") || (sideway_left_hit.transform.tag != "Railing") || (sideway_left_hit.transform.tag != "Barrels"))
+    //        {
+    //            left_sideway_sensor_hit = Physics.Raycast(transform.position, -transform.right, out sideway_left_hit, SidewaySensorLength);
+
+    //            left_sideway_sensor = sideway_left_hit.distance;
+
+    //            Debug.DrawLine(transform.position, sideway_left_hit.point, Color.black);
+    //        } else
+    //        {
+    //            flag = 0;
+    //        }
+    //    }
+
+
+    //}
+
+
+    public void Sensors()
+    {
+        flag = 0;
+
+        float front_sensor_initial_point = (float)front_Sensor_Start_Point;
+        pos = transform.position;
+
+        float front_left_angled_sensor_initial_point = (float)front_left_angled_sensor_start_point;
+
+        float front_right_angled_sensor_initial_point = (float)front_right_angled_sensor_start_point;
+
+        // Initialize flags
+        front_Sensor_Hit = false;
+        front_left_straight_sensor_hit = false;
+        front_right_straight_sensor_hit = false;
+        front_right_angular_sensor_hit = false;
+        front_left_angular_sensor_hit = false;
+        right_sideway_sensor_hit = false;
+        left_sideway_sensor_hit = false;
+
+
+
+        // front mid sensor
+        pos = pos + transform.forward * front_sensor_initial_point;
+
+        if (Physics.Raycast(pos, transform.forward, out front_hit, sensorLength))
+        {
+            if ((front_hit.transform.tag == "Vehicle") || (front_hit.transform.tag == "Obstacle") || (front_hit.transform.tag == "Barrels") || (front_hit.transform.tag == "Railing"))
+            {
+                front_Sensor_Hit = Physics.Raycast(pos, transform.forward, out front_hit, sensorLength);
+
+                front_mid_sensor_distance = front_hit.distance;
+                while (avoid_Senstivity <= maxSteerforAvoidance)
+                {
+                    avoid_Senstivity = avoid_Senstivity + change_in_senstivity;
+                }
+                flag++;
+
+                Debug.Log("Avoiding Obstacle");
+
+                Debug.DrawLine(pos, front_hit.point, Color.black);
+            }
+        }
+        else if (!Physics.Raycast(pos, transform.forward, out front_hit, sensorLength))
+        {
+            flag = 0;
+            //front_Sensor_Hit = false;
+        }
+
+        // front straight right sensor
+        rightSensorPos = pos + transform.right * frontSensorSideDistance;
+
+        if (Physics.Raycast(rightSensorPos, transform.forward, out right_hit, sensorLength))
+        {
+            if ((right_hit.transform.tag == "Vehicle") || (right_hit.transform.tag == "Railing") || (right_hit.transform.tag == "Barrels") || (right_hit.transform.tag == "Obstacle"))
+            {
+                front_right_straight_sensor_hit = Physics.Raycast(rightSensorPos, transform.forward, out right_hit, sensorLength);
+
+                front_right_sensor_distance = right_hit.distance;
+                while (avoid_Senstivity <= maxSteerforAvoidance)
+                {
+                    avoid_Senstivity = avoid_Senstivity + change_in_senstivity;
+                }
+                flag++;
+                // Is_Avoidance_Active = true;
+                Debug.Log("Avoiding Obstacle");
+                Debug.DrawLine(rightSensorPos, right_hit.point, Color.black);
+            }
+        }
+        else if (!Physics.Raycast(rightSensorPos, transform.forward, out RaycastHit raycastHit, sensorLength))
+        {
+            flag = 0;
+            //  front_right_angular_sensor_hit = false;
+        }
+
+        // front left straight sensor
+        leftSensorPos = pos - transform.right * frontSensorSideDistance;
+
+        if (Physics.Raycast(leftSensorPos, transform.forward, out left_hit, sensorLength))
+        {
+            if ((left_hit.transform.tag == "Vehicle") || (left_hit.transform.tag == "Railing") || (left_hit.transform.tag == "Barrels") || (left_hit.transform.tag == "Obstacle"))
+            {
+                front_left_straight_sensor_hit = Physics.Raycast(leftSensorPos, transform.forward, out left_hit, sensorLength);
+
+                front_left_sensor_distance = left_hit.distance;
+                while (avoid_Senstivity <= maxSteerforAvoidance)
+                {
+                    avoid_Senstivity = avoid_Senstivity + change_in_senstivity;
+                }
+                flag++;
+
+                Debug.Log("Avoiding Obstacle");
+
+                Debug.DrawLine(leftSensorPos, left_hit.point, Color.black);
+            }
+            else if (!Physics.Raycast(leftSensorPos, transform.forward, out left_hit, sensorLength))
+            {
+                flag = 0;
+                // front_left_straight_sensor_hit = false;
+            }
+        }
+
+        // Calculate front right angle sensor position
+
+
+        rightAngleSensorPos = front_right_angular_sensor_pos.transform.position;
+
+        right_Angle = Quaternion.AngleAxis(right_angled_angle, transform.up) * transform.forward;
+
+
+        if (Physics.Raycast(rightAngleSensorPos, right_Angle, out right_angular_hit, sensorLength))
+        {
+            if ((right_angular_hit.transform.tag == "Vehicle") || (right_angular_hit.transform.tag == "Railing") || (right_angular_hit.transform.tag == "Barrels") || (right_angular_hit.transform.tag == "Obstacle"))
+            {
+                front_right_angular_sensor_hit = Physics.Raycast(rightAngleSensorPos, right_Angle, out right_angular_hit, sensorLength);
+
+                front_right_angular_sensor_distance = right_angular_hit.distance;
+                while (avoid_Senstivity <= maxSteerforAvoidance)
+                {
+                    avoid_Senstivity = avoid_Senstivity + change_in_senstivity;
+                }
+                Debug.Log("Avoiding Obstacle");
+                Debug.DrawLine(rightAngleSensorPos, right_angular_hit.point, Color.green);
+            }
+            else
+            {
+                flag = 0;
+            }
+        }
+
+        // Calculate front left angle sensor position
+
+
+        leftAngleSensorPos = front_left_angular_sensor_sensor_pos.transform.position;
+
+        //caluate the angle for left angled sensor
+
+        left_Angle = Quaternion.AngleAxis(left_angled_angle, transform.up) * transform.forward;
+
+
+        if (Physics.Raycast(leftAngleSensorPos, left_Angle, out left_angular_hit, sensorLength))
+        {
+            if ((left_angular_hit.transform.tag == "Vehicle") || (left_angular_hit.transform.tag == "Railing") || (left_angular_hit.transform.tag == "Barrels") || (left_angular_hit.transform.tag == "Obstacle"))
+            {
+                front_left_angular_sensor_hit = Physics.Raycast(leftAngleSensorPos, left_Angle, out left_angular_hit, sensorLength);
+
+                front_left_angular_sensor_distance = left_angular_hit.distance;
+
+                while (avoid_Senstivity <= maxSteerforAvoidance)
+                {
+                    avoid_Senstivity = avoid_Senstivity + change_in_senstivity;
+                }
+                Debug.Log("Avoiding Obstacle");
+                Debug.DrawLine(leftAngleSensorPos, left_angular_hit.point, Color.blue);
+            }
+            else
+            {
+                flag = 0;
+            }
+        }
+
+        //Right Sideway Sensor
+
+        if (Physics.Raycast(transform.position, transform.right, out sideway_right_hit, SidewaySensorLength))
+        {
+            if ((sideway_right_hit.transform.tag == "Vehicle") || (sideway_right_hit.transform.tag == "Railing") || (sideway_right_hit.transform.tag == "Barrels") || (sideway_right_hit.transform.tag == "Obstacle"))
+            {
+                right_sideway_sensor_hit = Physics.Raycast(transform.position, transform.right, out sideway_right_hit, SidewaySensorLength);
+
+                right_sideway_sensor = sideway_right_hit.distance;
+
+                Debug.DrawLine(transform.position, sideway_right_hit.point, Color.black);
+            }
+            else
+            {
+                flag = 0;
+            }
+        }
+
+        //Left Sideway Sensor
+        if (Physics.Raycast(transform.position, -transform.right, out sideway_left_hit, SidewaySensorLength))
+        {
+            if ((sideway_left_hit.transform.tag == "Vehicle") || (sideway_left_hit.transform.tag == "Railing") || (sideway_left_hit.transform.tag == "Barrels") || (sideway_left_hit.transform.tag == "Obstacle"))
+            {
+                left_sideway_sensor_hit = Physics.Raycast(transform.position, -transform.right, out sideway_left_hit, SidewaySensorLength);
+
+                left_sideway_sensor = sideway_left_hit.distance;
+
+                Debug.DrawLine(transform.position, sideway_left_hit.point, Color.black);
+            }
+            else
+            {
+                flag = 0;
+            }
+        }
+
+
+    }
+
+    void avoid_Steer(double senstivity)
+    {
+        //if (flag != 0)
+        //{
+        //    WheelFL.steerAngle = (float)maxSteer * (float)senstivity;
+        //    WheelFR.steerAngle = (float)maxSteer * (float)senstivity;
+        //}
+
+        // code to gather information of sensors in the form of boolean values to see if they are active or not
+
+        //front_Sensor_Hit = Physics.Raycast(pos, transform.forward, out front_hit, sensorLength);
+
+        //front_right_straight_sensor_hit = Physics.Raycast(rightSensorPos, transform.right, out right_hit, sensorLength);
+
+        //front_left_straight_sensor_hit = Physics.Raycast(leftSensorPos, -transform.right, out left_hit, sensorLength);
+
+        //front_right_angular_sensor_hit = Physics.Raycast(leftAngleSensorPos, transform.right, out right_angular_hit, sensorLength);
+
+        //front_left_angular_sensor_hit = Physics.Raycast(rightAngleSensorPos, -transform.right, out left_angular_hit, sensorLength);
+
+        //right_sideway_sensor_hit = Physics.Raycast(transform.position, transform.right, out sideway_right_hit, SidewaySensorLength);
+
+        left_sideway_sensor_hit = Physics.Raycast(transform.position, -transform.right, out sideway_left_hit, SidewaySensorLength);
+
+        //code to gather the distance of the sensors from obstacles
+
+        if (front_Sensor_Hit)
+        {
+
+            front_mid_sensor_distance = front_hit.distance;
+        }
+        else if (!front_Sensor_Hit)
+        {
+            front_mid_sensor_distance = 10;
+        }
+
+        if (front_right_straight_sensor_hit)
+        {
+            //  front_right_angular_sensor_distance = right_hit.distance;
+        }
+        else if (!front_right_straight_sensor_hit)
+        {
+            front_right_sensor_distance = 10;
+        }
+
+        if (front_left_straight_sensor_hit)
+        {
+            front_left_sensor_distance = left_hit.distance;
+        }
+        else if (!front_left_straight_sensor_hit)
+        {
+            front_left_sensor_distance = 10;
+        }
+
+        if (front_right_angular_sensor_hit)
+        {
+            front_right_angular_sensor_distance = right_angular_hit.distance;
+        }
+        else if (!front_right_angular_sensor_hit)
+        {
+            front_right_angular_sensor_distance = 10;
+        }
+
+        if (front_left_angular_sensor_hit)
+        {
+            front_left_angular_sensor_distance = left_angular_hit.distance;
+        }
+        else if (!front_left_angular_sensor_hit)
+        {
+            front_left_angular_sensor_distance = 10;
+        }
+
+        if (right_sideway_sensor_hit)
+        {
+            right_sideway_sensor = sideway_right_hit.distance;
+        }
+        else if (!right_sideway_sensor_hit)
+        {
+            right_sideway_sensor = 10;
+        }
+
+        if (left_sideway_sensor_hit)
+        {
+            left_sideway_sensor = sideway_left_hit.distance;
+        } else if (!left_sideway_sensor_hit)
+        {
+            left_sideway_sensor = 10;
+        }
+
+
+    }
+
+
+
+    void CalculateObstacleSpeed()
+    {
+        if (front_Sensor_Hit)
+        {
+            if (obstacle_last_position == Vector3.zero)  // Check if obstacle_last_position is not initialized
+            {
+                // Store the initial position of the obstacle
+                obstacle_last_position = front_hit.transform.position;
+                lastTime = Time.time; // Store the initial time
+            }
+
+            obstacle_curr_position = front_hit.transform.position;
+            distance = Vector3.Distance(obstacle_curr_position, obstacle_last_position);
+
+            float deltaTime = Time.time - lastTime; // Calculate the time difference
+
+            if (deltaTime > 0)
+            {
+                // Calculate speed in meters per second
+                obstacle_speed_meters_per_sec = distance / deltaTime;
+
+                // Convert speed to kilometers per hour
+                obstacle_speed_kmh = obstacle_speed_meters_per_sec * 3.6f;
+
+                // Update obstacle_last_position for the next frame
+                obstacle_last_position = obstacle_curr_position;
+                lastTime = Time.time; // Update the last time
+            }
+            else
+            {
+                Debug.LogError("Time difference is zero or negative. Unable to calculate speed.");
+            }
+        } else
+        {
+            obstacle_last_position = Vector3.zero;
+            obstacle_curr_position = Vector3.zero;
+            distance = 0;
+            obstacle_speed_meters_per_sec = 0;
+            obstacle_speed_kmh = 0;
+            lastTime = 0;
+        }
+    }
+
+
+    void CollisionAvoidance(double avoid_senstivity)
+    {
+
+        Is_Avoidance_Active = true;
+
+        LeftBrakeLight1.SetActive(false);
+        RightBrakeLight1.SetActive(false);
+
+
+        if ((front_Sensor_Hit) || (front_right_straight_sensor_hit) || (front_left_straight_sensor_hit) || (front_right_angular_sensor_hit) || (front_left_angular_sensor_hit))
+        {
+            if (right_sideway_sensor_hit == true && left_sideway_sensor_hit == false)
+            {
+                //  turn left
+                WheelFL.steerAngle = (float)(-maxSteer * avoid_senstivity);
+                WheelFR.steerAngle = (float)(-maxSteer * avoid_senstivity);
+                is_Enabled_Emergency_Braking = false;
+            }
+            else if (right_sideway_sensor_hit == false && left_sideway_sensor_hit == true)
+            {
+                // turn right
+                WheelFL.steerAngle = (float)(maxSteer * avoid_senstivity);
+                WheelFR.steerAngle = (float)(maxSteer * avoid_senstivity);
+                is_Enabled_Emergency_Braking = false;
+
+
+            }
+            else if (right_sideway_sensor_hit == false && left_sideway_sensor_hit == false)
+            {
+                // turn right
+                WheelFL.steerAngle = (float)(maxSteer * avoid_senstivity);
+                WheelFR.steerAngle = (float)(maxSteer * avoid_senstivity);
+                is_Enabled_Emergency_Braking = false;
+
+
+            }
+            else if (right_sideway_sensor_hit == true && left_sideway_sensor_hit == true)
+            {
+                is_Enabled_Emergency_Braking = true;
+                Emergency_Braking();
+
+
+            }
+            //} else if (front_right_angular_sensor_hit)
+            //{
+            //    //  turn left
+            //    WheelFL.steerAngle = (float)(-maxSteer * avoid_senstivity);
+            //    WheelFR.steerAngle = (float)(-maxSteer * avoid_senstivity);
+            //    is_Enabled_Emergency_Braking = false;
+
+            //} else if (front_left_angular_sensor_hit)
+            //{
+            //    // turn right
+            //    WheelFL.steerAngle = (float)(maxSteer * avoid_senstivity);
+            //    WheelFR.steerAngle = (float)(maxSteer * avoid_senstivity);
+            //    is_Enabled_Emergency_Braking = false;
+            //}
+            else if ((front_Sensor_Hit && front_right_straight_sensor_hit && front_left_straight_sensor_hit) == false)
+            {
+                is_Enabled_Emergency_Braking = false;
+                // turn the brake lights off
+                LeftBrakeLight1.SetActive(false);
+                RightBrakeLight1.SetActive(false);
+            }
+
+            // for brakelights
+
+            if (is_Enabled_Emergency_Braking == true)
+            {
+                // turn the brake lights on
+                LeftBrakeLight1.SetActive(true);
+                RightBrakeLight.SetActive(true);
+            }
+            else if (is_Enabled_Emergency_Braking == false)
+            {
+                // turn the brake lights off
+                LeftBrakeLight1.SetActive(false);
+                RightBrakeLight1.SetActive(false);
+            }
+
+
+
+        }
+
+        void Emergency_Braking()
+        {
+            // is_Enabled_Emergency_Braking = true;
+            WheelFL.motorTorque = 0;
+            WheelFR.motorTorque = 0;
+            WheelRL.motorTorque = 0;
+            WheelRR.motorTorque = 0;
+
+            WheelFL.brakeTorque = (float)Emergency_Brake_Torque;
+            WheelFR.brakeTorque = (float)Emergency_Brake_Torque;
+            WheelRL.brakeTorque = (float)Emergency_Brake_Torque;
+            WheelRR.brakeTorque = (float)Emergency_Brake_Torque;
+
+
+
+
+
+        }
+    }
+
+
+}
